@@ -5,7 +5,7 @@ noise robust node state prediction. Julia core engine + Python API.
 
 ## Why GraphStoch?
 
-Real-world graph data - social networks, crypto transaction graphs, 
+Real world graph data - social networks, crypto transaction graphs, 
 brain connectivity networks looks powerful, but is riddled with 
 random noise. Standard Graph Neural Networks (GNNs) don't explicitly 
 model this noise, so they end up learning it as if it were signal.
