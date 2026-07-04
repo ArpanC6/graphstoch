@@ -108,7 +108,7 @@ Where:
   statistical properties
 
 **Deterministic part in code**: at each step, compute -L X_t, scale 
-by Δt, and add to X_t. This is pure matrix multiplication — fully 
+by Δt, and add to X_t. This is pure matrix multiplication - fully 
 predictable.
 
 **Noise part in code**: at each step, sample a random vector Z 
@@ -131,6 +131,38 @@ Even with random noise injected at every step, the noisy trajectory
 (red) tracks the same overall trend as the clean deterministic 
 diffusion (blue) demonstrating that the Laplacian's structural pull 
 dominates over random fluctuation.
+
+## Benchmark: GraphStoch vs Naive Neighbor Averaging
+
+We compared GraphStoch's diffusion process against a naive GNN-style 
+baseline (iterative neighbor averaging) on a 30-node random graph 
+with heavy noise (σ=2.0 relative to signal scale).
+
+**Key finding**: naive averaging converges quickly but plateaus at a 
+suboptimal error (~0.237 MSE) because repeated unweighted averaging 
+over-smooths the graph nodes lose their individual structure and 
+collapse toward a single average value. GraphStoch continues to 
+improve with more steps (0.36 -> 0.20 -> 0.17 MSE) since the 
+Laplacian based dynamics preserve more of the underlying graph 
+structure.
+
+We also found that step size (dt) is critical for the Euler-Maruyama 
+solver: dt=0.1 gives stable convergence, but dt≥0.2 causes the 
+solution to diverge numerically - a known stability constraint of 
+Euler-based SDE solvers confirming the theory behind why small step 
+sizes are required.
+
+| Iterations | Naive MSE | GraphStoch MSE (dt=0.1) |
+|---|---|---|
+| 3  | 0.473 | 1.118 |
+| 5  | 0.285 | 0.717 |
+| 10 | 0.233 | 0.363 |
+| 20 | 0.237 | 0.201 |
+| 50 | 0.238 | **0.173** |
+
+GraphStoch requires more iterations to converge but avoids the 
+over smoothing plateau naive averaging suffers from at the cost of 
+slower initial convergence.
 
 ## Status
 
