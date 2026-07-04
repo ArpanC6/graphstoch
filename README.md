@@ -164,17 +164,56 @@ GraphStoch requires more iterations to converge but avoids the
 over smoothing plateau naive averaging suffers from at the cost of 
 slower initial convergence.
 
+## Solver Comparison: Euler-Maruyama vs SRA3
+
+The from-scratch Euler-Maruyama (EM) implementation above is educational 
+and transparent, but as a fixed-step method it has a hard numerical 
+stability limit tied to the largest eigenvalue of the graph Laplacian 
+(`dt < 2/λ_max`). Exceeding that limit causes the solution to diverge.
+
+Since the noise term in this model is additive (σ is constant, not 
+state-dependent), the equation is a good fit for **SRA3** - a Stochastic 
+Runge-Kutta method with adaptive step size, available in 
+[StochasticDiffEq.jl](https://github.com/SciML/StochasticDiffEq.jl) 
+(part of the SciML ecosystem). This suggestion came from 
+[Chris Rackauckas](https://github.com/ChrisRackauckas) after sharing 
+early results with the SciML community.
+
+**Test setup**: 4-node chain graph, X0 = [10, 0, 0, 0], σ = 0.5, 
+dt = 0.7 (above this graph's stability limit of ~0.586).
+
+| Method | Step size | Final state | Result |
+|---|---|---|---|
+| Euler-Maruyama (from scratch) | Fixed, dt=0.7 | [547, -1309, 1314, -541] | Diverged |
+| SRA3 (StochasticDiffEq.jl) | Adaptive | [2.89, 2.75, 2.86, 2.63] | Stable, converged |
+
+SRA3's adaptive stepping automatically takes smaller internal steps when 
+needed, without the user having to hand-pick a safe dt. Going forward, 
+SRA3 is used as the primary solver for production runs, while the 
+from-scratch EM implementation is kept as an explicit, interpretable 
+baseline for illustrating the stability trade-off.
+
+**Note**: this result demonstrates instability at one specific step size 
+on one specific graph - it is not a claim that SRA3 is universally better 
+in all regimes, only that it is well-suited for additive-noise SDEs like 
+this one.
+
+
 ## Status
 
-- Phase 1: Graph Laplacian construction (from scratch)
-- Phase 2: Euler-Maruyama SDE solver (from scratch)
-- Phase 3: Python wrapper (juliacall)
-- Phase 4: Benchmark vs standard GNN on noisy data
+- [x] Phase 1: Graph Laplacian construction (from scratch)
+- [x] Phase 2: Euler-Maruyama SDE solver (from scratch)
+- [x] Phase 3: Python wrapper (juliacall) - `GraphSDE` class with 
+      `.simulate()`, `.denoise()`, `.stable_dt()` methods
+- [x] Phase 4: Benchmark vs standard GNN on noisy data
+- [x] Phase 5: SRA3 adaptive solver integration (StochasticDiffEq.jl) 
+      for improved numerical stability
 
 ## Tech Stack
 
 - **Julia**: core simulation engine
-- **Python**: wrapper API (planned, via juliacall)
+- **StochasticDiffEq.jl**: adaptive SRA3 solver for additive-noise SDEs
+- **Python**: wrapper API, via juliacall (`GraphSDE` class)
 - **Plots.jl**: visualization
 
 ## License

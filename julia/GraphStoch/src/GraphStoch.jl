@@ -1,4 +1,5 @@
 module GraphStoch
+using StochasticDiffEq
 
 # Build a random graph with n nodes using the Erdos-Renyi model
 
@@ -19,7 +20,7 @@ end
 # Build the degree matrix D from an adjacency matrix A.
 # D is diagonal, where D[i,i] equals the degree of node i.
 
-function degree_matrix(A::Matrix)
+function degree_matrix(A::AbstractMatrix)
     n = size(A, 1)
     D = zeros(n, n)
 
@@ -33,7 +34,7 @@ end
 # Graph Laplacian: L = D - A
 # Captures the connectivity structure of the graph.
 
-function graph_laplacian(A::Matrix)
+function graph_laplacian(A::AbstractMatrix)
     D = degree_matrix(A)
     return D - A
 end
@@ -42,7 +43,7 @@ end
 # Simulate deterministic graph diffusion:
 # dX/dt = -L * X
 
-function diffuse(L::Matrix, X0::Vector, dt::Float64, steps::Int)
+function diffuse(L::AbstractMatrix, X0::AbstractVector, dt::Float64, steps::Int)
     X = copy(X0)
     history = [copy(X)]
 
@@ -58,7 +59,7 @@ end
 # Euler-Maruyama solver for the stochastic diffusion equation:
 # dX_t = -L * X_t * dt + sigma * dW_t
 
-function sde_solve(L::Matrix, X0::Vector, dt::Float64, steps::Int, sigma::Float64)
+function sde_solve(L::AbstractMatrix, X0::AbstractVector, dt::Float64, steps::Int, sigma::Float64)
     n = length(X0)
     X = copy(X0)
     history = [copy(X)]
@@ -76,7 +77,7 @@ end
 # One-step neighbor averaging (single GCN-like layer)
 # X_new[i] = average of node i and all of its neighbors
 
-function naive_gnn_denoise(A::Matrix, X_noisy::Vector)
+function naive_gnn_denoise(A::AbstractMatrix, X_noisy::AbstractVector)
     n = length(X_noisy)
     X_new = copy(X_noisy)
 
@@ -96,7 +97,7 @@ end
 # Repeat neighbor averaging for multiple iterations so that
 # the comparison with GraphStoch is fair.
 
-function naive_gnn_multi(A::Matrix, X_noisy::Vector, iterations::Int)
+function naive_gnn_multi(A::AbstractMatrix, X_noisy::AbstractVector, iterations::Int)
     X = copy(X_noisy)
 
     for _ in 1:iterations
@@ -108,8 +109,18 @@ end
 
 # Mean Squared Error (MSE)
 
-function mse(x_true::Vector, x_pred::Vector)
+function mse(x_true::AbstractVector, x_pred::AbstractVector)
     return sum((x_true .- x_pred).^2) / length(x_true)
+end
+
+# Solve the same SDE using StochasticDiffEq's SRA3 (adaptive, additive-noise
+# specific solver), for comparison against the from-scratch Euler-Maruyama.
+function sra3_solve(L::AbstractMatrix, X0::AbstractVector, sigma::Float64, tspan::Tuple{Float64,Float64})
+    f(X, p, t) = -L * X
+    g(X, p, t) = fill(sigma, length(X))
+    prob = SDEProblem(f, g, X0, tspan)
+    sol = solve(prob, SRA3())
+    return sol
 end
 
 end # module GraphStoch
