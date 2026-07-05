@@ -1,5 +1,6 @@
 module GraphStoch
 using StochasticDiffEq
+using LinearAlgebra
 
 # Build a random graph with n nodes using the Erdos-Renyi model
 function random_graph(n::Int, p::Float64)
@@ -146,6 +147,40 @@ end
 
 function mse(x_true::AbstractMatrix, x_pred::AbstractMatrix)
     return sum((x_true .- x_pred).^2) / length(x_true)
+end
+
+function exact_solve(L::AbstractMatrix, X0::AbstractVector, sigma::Float64, t::Float64)
+    n = length(X0)
+    F = eigen(Symmetric(L))
+    λ = F.values
+    U = F.vectors
+
+    mean_t = U * (exp.(-λ .* t) .* (U' * X0))
+
+    var_modes = [λ_i ≈ 0.0 ? sigma^2 * t :
+                 sigma^2 * (1 - exp(-2 * λ_i * t)) / (2 * λ_i) for λ_i in λ]
+
+    Z = randn(n)
+    sample_t = mean_t .+ U * (sqrt.(var_modes) .* Z)
+
+    return sample_t, mean_t, var_modes
+end
+
+function exact_solve(L::AbstractMatrix, X0::AbstractMatrix, sigma::Float64, t::Float64)
+    n, k = size(X0)
+    F = eigen(Symmetric(L))
+    λ = F.values
+    U = F.vectors
+
+    mean_t = U * (exp.(-λ .* t) .* (U' * X0))
+
+    var_modes = [λ_i ≈ 0.0 ? sigma^2 * t :
+                 sigma^2 * (1 - exp(-2 * λ_i * t)) / (2 * λ_i) for λ_i in λ]
+
+    Z = randn(n, k)
+    sample_t = mean_t .+ U * (sqrt.(var_modes) .* Z)
+
+    return sample_t, mean_t, var_modes
 end
 
 end # module GraphStoch
