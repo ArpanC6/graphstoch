@@ -260,7 +260,7 @@ comparable as a measure of total diffusion "time" between the two methods -
 the comparison above is on final achievable accuracy, not on time-matched
 convergence speed.
 
-## Real Dataset Benchmark: Cora & Citeseer - Denoising as GNN Preprocessing
+## Real Dataset Benchmark: Cora, Citeseer & PubMed - Denoising as GNN Preprocessing
 
 The Karate Club benchmark above tests pure signal recovery on a small graph.
 To see how GraphStoch holds up at larger scale and against learned models, we
@@ -317,22 +317,68 @@ Here the result flips: GraphStoch-denoised features + Logistic Regression
 win 8 of 9 comparisons (p<0.05), by 1 to 3 percentage points. The one
 exception - vs. GAT at low noise - is not statistically significant.
 
+### PubMed results
+
+To help disentangle *why* GraphStoch wins on Citeseer but loses on Cora, we
+extended the same experiment to a third citation dataset,
+[PubMed](https://linqs.org/datasets/#pubmed-diabetes) (19,717 nodes, 500
+features, 3 classes) - identical setup (normalized features, same GNN
+hyperparameters, same 3 noise levels × 10 seeds, same paired t-tests).
+
+| Noise level | LogReg (noisy) | LogReg (GraphStoch-denoised) | GCN | GraphSAGE | GAT |
+|---|---|---|---|---|---|
+| Low    | 0.7321 | 0.7614 | **0.7899** | 0.7703 | 0.7775 |
+| Medium | 0.7146 | 0.7539 | **0.7800** | 0.7638 | 0.7718 |
+| Heavy  | 0.6529 | 0.7260 | **0.7593** | 0.7335 | 0.7557 |
+
+On PubMed, GNNs win the direction in all 9 comparisons, and 8 of 9 are
+statistically significant (p<0.05) - the one exception (GraphSAGE at heavy
+noise, p=0.35) is not significant, but the mean difference still favors GNN.
+This matches Cora's pattern, not Citeseer's.
+
+**Why this matters - a structural comparison across all three datasets:**
+we also computed six candidate graph/feature properties (connectivity,
+algebraic connectivity λ₂, feature-dim/node ratio, edge homophily, average
+degree, feature sparsity) for all three datasets
+(`python/compute_dataset_properties.py`). On Cora and Citeseer, all six
+properties moved together - Citeseer was more fragmented, lower λ₂, lower
+homophily, sparser, and had a higher feature-dim/node ratio, so the six
+hypotheses were completely confounded with only two datapoints. PubMed
+breaks this bundle: it is fully connected with the *highest* λ₂, average
+degree, and homophily close to Cora's of all three datasets - by those four
+measures it looks "Cora-like or better," not Citeseer-like. But on
+feature-dim/node ratio and feature sparsity specifically, PubMed is even
+more extreme than Citeseer.
+
+PubMed's classification result (GNNs win, Cora's pattern) tracks its
+connectivity / λ₂ / homophily / average degree profile, not its feature-dim
+ratio or sparsity profile. This is evidence that **graph structural
+properties (connectivity, algebraic connectivity, homophily, degree) are
+more likely to drive the GraphStoch-vs-GNN flip than feature-level
+properties (dimensionality ratio, sparsity)** - though with three datapoints
+this is still a correlational, not causal, conclusion. Isolating the true
+driver among these four remaining structural candidates requires a
+controlled synthetic-graph sweep (varying one property at a time while
+holding the others fixed), which is the planned next step.
+
 **Honest conclusion**: GraphStoch's standing relative to learned GNNs is
-**dataset-dependent**, not a clean win or loss either way. On Cora, GNNs
-clearly and substantially outperform GraphStoch-denoised-features-plus-LogReg.
+**dataset-dependent**, not a clean win or loss either way. On Cora and
+PubMed, GNNs clearly outperform GraphStoch-denoised-features-plus-LogReg.
 On Citeseer, GraphStoch-denoised-features-plus-LogReg holds a modest but
 consistent edge over all three GNN baselines. We are not claiming GraphStoch
 "beats" GNNs in general - the takeaway is that a fixed, non-learned,
 training-free denoising step is a genuinely competitive preprocessing
-baseline on some graphs and a clearly weaker one on others, and that
-variation is itself worth reporting rather than picking whichever dataset
-tells the more flattering story.
+baseline on some graphs and a clearly weaker one on others, and that this
+variation itself points toward specific structural graph properties
+(connectivity, algebraic connectivity, homophily, degree) as the more
+likely explanation, rather than feature-level properties.
 
-*Methodological note: an earlier version of this experiment, run without*
-*`T.NormalizeFeatures()`, produced misleadingly strong results for GraphStoch*
-*on both datasets. That version was discarded once the missing normalization*
-*was identified as the cause - row-normalization is required for these*
-*bag-of-words features to get GNN baselines that match published accuracy.*
+*Methodological note: an earlier version of the Cora/Citeseer experiment,*
+*run without `T.NormalizeFeatures()`, produced misleadingly strong results*
+*for GraphStoch on both datasets. That version was discarded once the*
+*missing normalization was identified as the cause - row-normalization is*
+*required for these bag-of-words features to get GNN baselines that match*
+*published accuracy.*
 
 ## Status
 
@@ -347,7 +393,9 @@ tells the more flattering story.
       dynamically-derived stable dt and denoising visualizations
 - [x] Phase 7: Cora & Citeseer benchmarks - GraphStoch-denoised features
       as GNN preprocessing, compared against GCN / GraphSAGE / GAT
-- [ ] Phase 8: PubMed benchmark (pending timing/feasibility check)
+- [x] Phase 8: PubMed benchmark - confirms Cora's pattern (GNNs win),
+      helps disentangle structural vs feature-level explanations for the
+      Cora/Citeseer flip
 
 ## Tech Stack
 
