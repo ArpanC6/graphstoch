@@ -442,6 +442,27 @@ would predict. Isolating fragmentation's independent contribution - by
 running an analogous synthetic sweep that varies connectivity/isolated-node
 count while holding homophily fixed - is the planned next step.
 
+### Theoretical Grounding: A Spectral Detectability Threshold
+
+The homophily crossover observed above is not just an empirical pattern -
+it has a theoretical explanation. GraphStoch's diffusion mechanism is,
+on a two-community SBM, mechanistically close to spectral clustering
+(both rely on the sign of the graph's second eigenvector). Random graph
+theory gives an exact threshold for when community structure is even
+detectable via spectral methods at all: the Kesten-Stigum / Abbe
+detectability threshold, `h* = 1/2 + 1/(2*sqrt(d))`. For this sweep's
+average degree (d ≈ 6.0), this predicts `h* ≈ 0.7041` - and independent
+spectral-clustering simulations (30 graph draws per homophily level)
+confirm the transition from chance-level to strong community detection
+happens almost exactly in the range 0.69-0.78, tightly bracketing this
+prediction. The empirical classification crossover (0.70-0.90) sits at or
+just above this threshold, exactly as expected: right at `h*`, structure
+is only barely detectable, so a comfortable classification advantage
+requires homophily somewhat past it. Full derivation, numerical
+verification, and an honest scope statement (this threshold explains
+GraphStoch's own mechanism, not GNN behavior in general) are in
+`THEORY.md`, Section 7.
+
 ## Status
 
 - [x] Phase 1: Graph Laplacian construction (from scratch)
