@@ -1,5 +1,7 @@
 # GraphStoch
 
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.21208912.svg)](https://doi.org/10.5281/zenodo.21208912)
+
 Stochastic Differential Equation solver on graph topology for noise robust node state prediction. Julia core engine + Python API.
 
 ## Why GraphStoch?
@@ -87,7 +89,8 @@ GraphStoch's SDE has a closed-form Ornstein-Uhlenbeck solution, a provable Euler
 - [x] Phase 9: Controlled synthetic homophily sweep - establishes homophily as a causal driver, replicated across 3 seeds
 - [x] Phase 10: Controlled synthetic fragmentation sweep - rules out fragmentation as the Citeseer explanation below h*; identifies the null-space exemption mechanism
 - [ ] Phase 11: Near-threshold fragmentation sweep (homophily ~0.65-0.70) - open question, not yet run
-- [ ] Phase 12: README/BENCHMARKS/THEORY cross-linking pass, Zenodo DOI, arXiv preprint
+- [x] Phase 12a: Zenodo DOI set up for citable, versioned releases (10.5281/zenodo.21208912)
+- [ ] Phase 12b: README/BENCHMARKS/THEORY cross-linking pass, arXiv preprint
 
 ## Tech Stack
 
@@ -101,7 +104,6 @@ GraphStoch's SDE has a closed-form Ornstein-Uhlenbeck solution, a provable Euler
 ## Future Work
 
 - Test fragmentation's effect near the spectral detectability threshold (homophily ~0.65-0.70) rather than well below it - the current fragmentation result rules out one regime, not all of them.
-- Set up a Zenodo DOI for tagged releases, so this work is citably archived.
 - Target an arXiv preprint once the above is settled.
 
 ## Citation
@@ -109,12 +111,12 @@ GraphStoch's SDE has a closed-form Ornstein-Uhlenbeck solution, a provable Euler
 If you use GraphStoch in your own work, please cite this repository:
 
 ```
-Chakraborty, A. GraphStoch: Stochastic Differential Equation modeling
-for noise-robust node state prediction on graphs.
-https://github.com/ArpanC6/graphstoch
+Chakraborty, A. (2026). GraphStoch: Stochastic Differential Equation
+modeling for noise-robust node state prediction on graphs (v1.0.0).
+Zenodo. https://doi.org/10.5281/zenodo.21208912
 ```
 
-A Zenodo DOI for a citable, versioned release is planned (see Future Work).
+This DOI always resolves to the latest version. Individual versioned DOIs will be added for future releases.
 
 ## License
 
