@@ -343,6 +343,101 @@ than asserted. It is not a claim that GNN performance itself is governed
 by the identical formula, only that GraphStoch's specific
 Laplacian-diffusion mechanism is.
 
+## Section 8: Isolated Nodes and the Null-Space Exemption from Sub-Threshold Diffusion Harm
+
+Section 7 explained the homophily crossover as a spectral detectability
+threshold. This section addresses a distinct, complementary question that
+arose while testing whether graph fragmentation (isolated/disconnected
+nodes) could explain why real Citeseer favors GraphStoch even though its
+homophily (0.7355) is comfortably inside the regime where the pure
+homophily sweep shows GNNs winning clearly. A controlled synthetic
+fragmentation sweep (homophily held fixed at 0.60 -- deliberately *below*
+the detectability threshold h* ~ 0.7041 from Section 7 -- while varying
+isolated-node fraction from 0% to 30%) found no crossover: GNNs won every
+comparison at every isolation level tested. But the sweep surfaced an
+exact, provable mechanism worth stating formally.
+
+### 8.1 The exact algebraic fact
+
+**Fact 3 (null-space exemption).** For any node i with degree d_i = 0
+(an isolated node), row i of the Laplacian L = D - A is identically zero,
+since both D_ii = 0 and every entry A_ij = 0. Therefore [LX]_i = 0 for
+every state vector X. GraphStoch's denoising step is the noise-free
+drift iteration X_{k+1} = X_k - L X_k * dt (Section 3's discretization
+with no fresh noise re-injected). For an isolated node, this reduces to
+X_i^(k+1) = X_i^(k) for every k -- the node's state is an exact fixed
+point of the iteration.
+
+**Consequence:** an isolated node's post-denoising feature vector is
+identical, entry for entry, to its pre-denoising (noisy) feature vector.
+GraphStoch's denoising step provides it with exactly zero smoothing --
+neither benefit nor harm -- by algebraic construction, not as a
+statistical tendency.
+
+### 8.2 What this predicts for a fragmentation sweep
+
+**Corollary.** In a dataset that is a mixture of active nodes (fraction
+1-f) and isolated nodes (fraction f), the aggregate denoised-feature set
+is exactly (diffused active-node values) union (unchanged noisy
+isolated-node values). Two regimes follow:
+
+- If homophily is *below* h* (diffusion is actively harmful to active
+  nodes -- see Section 7's scope, and Section 4b's honest-order caveat),
+  then increasing f should monotonically move aggregate denoised accuracy
+  *up*, toward the noisy-only baseline, since a growing share of the
+  population is exempted from that harm.
+- As f -> 1, aggregate denoised accuracy should converge exactly to
+  noisy-baseline accuracy, since every node is exempt.
+- Critically, this ceiling is the noisy baseline itself -- fragmentation
+  under this mechanism can never let GraphStoch's denoised accuracy
+  exceed what raw noisy features already achieve, regardless of how much
+  of the graph is isolated.
+
+### 8.3 Empirical confirmation
+
+This matches the fragmentation sweep exactly. At homophily 0.60 (below
+h*), GraphStoch+LogReg accuracy at isolation_fraction=0 was well below
+the noisy baseline (e.g. seed 42: 0.482 denoised vs. 0.680 noisy) and
+rose steadily with isolation_fraction, approaching but never reaching or
+exceeding the noisy baseline at isolation_fraction=0.30 (e.g. seed 42:
+0.586 denoised vs. 0.692 noisy). All three graph seeds showed the same
+monotonic pattern. This is the mechanism behind why no crossover
+appeared: the ceiling that fragmentation asymptotes toward (the noisy
+baseline, ~0.68-0.69) itself remains well below all three GNN baselines
+(~0.64-0.71 but generally higher) at this homophily level -- fragmentation
+can rescue GraphStoch from its own harm, but cannot make it competitive.
+
+### 8.4 Honest scope of this claim
+
+This is an exact, provable statement about GraphStoch's own mechanism --
+not a claim about GNN behavior under fragmentation, and not (on its own)
+an explanation for real Citeseer's result. Two limitations are worth
+stating plainly:
+
+1. **This experiment specifically tested homophily well below h*.** Real
+   Citeseer's homophily (0.7355) sits near/just above h* (~0.7041) --  a
+   regime where diffusion is only marginally beneficial rather than
+   clearly harmful. Whether fragmentation behaves differently near or
+   above the threshold (where it might interact with the marginal
+   detectability signal rather than simply exempting nodes from harm) has
+   not been tested, and is a natural next experiment rather than an
+   assumed answer.
+2. **The asymptotic convergence in Section 8.2 (f -> 1 implies denoised
+   accuracy -> noisy accuracy exactly) is a theoretical prediction, not
+   yet empirically confirmed beyond f = 0.30** -- the tested range does
+   not reach the asymptote closely enough to confirm the limit directly,
+   only the monotonic direction predicted by the mechanism.
+
+Taken together: this fragmentation experiment, as designed, **does not
+support fragmentation as the explanation for Citeseer's result** at
+homophily levels below h*. It replaces an open, unresolved tension
+(Section 7d's original null-space observation, which did not specify
+whether fragmentation would help or hurt) with an exact, verified
+mechanism -- but that mechanism happens to rule out, rather than confirm,
+the hypothesis it was designed to test. The Citeseer explanation remains
+open; testing fragmentation near h* (~0.65-0.70) rather than well below
+it is the natural next step, not yet done.
+
 ### References (additional to Section "References" below)
 
 - Decelle, A., Krzakala, F., Moore, C., & Zdeborová, L. (2011). Asymptotic
