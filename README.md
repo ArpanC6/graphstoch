@@ -1,501 +1,120 @@
 # GraphStoch
 
-Stochastic Differential Equation solver on graph topology for
-noise robust node state prediction. Julia core engine + Python API.
+Stochastic Differential Equation solver on graph topology for noise robust node state prediction. Julia core engine + Python API.
 
 ## Why GraphStoch?
 
-Real world graph data - social networks, crypto transaction graphs,
-brain connectivity networks looks powerful, but is riddled with
-random noise. Standard Graph Neural Networks (GNNs) don't explicitly
-model this noise, so they end up learning it as if it were signal.
+Real world graph data - social networks, crypto transaction graphs, brain connectivity networks - looks powerful, but is riddled with random noise. Standard Graph Neural Networks (GNNs) don't explicitly model this noise, so they end up learning it as if it were signal.
 
-**Three domains, one shared problem:**
+Three domains, one shared problem:
 
-- **Social networks**: users post erratically due to hype, mood, or
-  randomness that doesn't reflect their long term behavior. GNNs
-  treat this one off noise as signal, degrading recommendations and
-  community detection.
-- **Crypto transaction networks**: wallets generate a mix of regular
-  activity, bot traffic, and pure noise (test transfers, airdrops,
-  wash trading). Without separating noise from signal, real threats
-  get diluted and harmless wallets get over-flagged.
-- **Brain / neuron networks**: neuron activation data is full of
-  sensor noise and biological jitter. If a model can't separate this
-  from the stable underlying pattern, clinically important structure
-  gets lost in the noise.
+- **Social networks**: users post erratically due to hype, mood, or randomness that doesn't reflect their long term behavior. GNNs treat this one-off noise as signal, degrading recommendations and community detection.
+- **Crypto transaction networks**: wallets generate a mix of regular activity, bot traffic, and pure noise (test transfers, airdrops, wash trading). Without separating noise from signal, real threats get diluted and harmless wallets get over-flagged.
+- **Brain / neuron networks**: neuron activation data is full of sensor noise and biological jitter. If a model can't separate this from the stable underlying pattern, clinically important structure gets lost in the noise.
 
-**The core issue**: every node's behavior is a mix of a slow, stable
-pattern (signal) and fast, random fluctuation (noise). Standard GNNs
-have no explicit mathematical model for this separation - they
-assume observed data is roughly clean, so noise leaks directly into
-the learned weights.
+The core issue: every node's behavior is a mix of a slow, stable pattern (signal) and fast, random fluctuation (noise). Standard GNNs have no explicit mathematical model for this separation. GraphStoch's approach: treat each node's state as a stochastic process, explicitly simulating both graph diffusion (via the Laplacian) and random noise (via Brownian motion), so the model can distinguish long-term structure from momentary fluctuation instead of conflating the two.
 
-**GraphStoch's approach**: treat each node's state as a stochastic
-process. Explicitly simulate both graph diffusion (via the Laplacian)
-and random noise (via Brownian motion), so the model can distinguish
-long term structure from momentary fluctuation instead of
-conflating the two.
+## The Math (short version)
 
-## The Math
+Node states evolve according to
 
-### Graph Laplacian (L = D - A)
+    dX_t = -L X_t dt + sigma dW_t
 
-The Laplacian measures how different each node is from its
-neighbors, and provides the mechanism to smooth that difference out
-over the graph.
+where `L = D - A` is the graph Laplacian, `-L X_t dt` is a deterministic diffusion term that pulls each node's value toward its neighbors' average, and `sigma dW_t` is explicit Brownian noise. We discretize this via Euler-Maruyama (from scratch, no third-party SDE library, to keep the mechanics transparent) and also provide an adaptive-step SRA3 solver (via `StochasticDiffEq.jl`) for numerical stability on graphs with high-degree hub nodes.
 
-- **Adjacency matrix (A)**: encodes which nodes are connected.
-- **Degree matrix (D)**: diagonal matrix where D[i,i] = number of
-  connections node i has.
-- **Laplacian**: L = D - A
+This is a linear, additive-noise SDE - a multivariate Ornstein-Uhlenbeck process with the graph Laplacian as its mean-reversion matrix - which is why it has a closed-form solution, a provable stability threshold, and a provable convergence order. See **`THEORY.md`** for the full derivations; every empirical stability/convergence observation below is a consequence of a proved theorem there, not an independent finding.
 
-Given a state vector x over the graph, Lx measures how far each
-node's value is from its neighbors' values. Nodes close to their
-neighbors have small Laplacian values; outliers have large ones.
+## Installation
 
-This makes -Lx a diffusion operator: repeatedly applying it pulls
-every node's value toward the average of its neighbors, smoothing
-out noisy, disconnected values into a stable pattern.
-
-### The Stochastic Differential Equation
-
-We model each node's state evolution as:
-
-    dX_t = -L X_t dt + σ dW_t
-
-This says node states change over time due to two combined effects:
-
-**1. Deterministic part: -L X_t dt**
-
-- X_t is the vector of all node values at time t.
-- L is the graph Laplacian, capturing how different each node is
-  from its neighbors.
-- -L X_t dt pulls every node's value a little closer to its
-  neighbors' average at each instant.
-
-This part is fully predictable: given X_t and L, you know exactly
-which direction the system moves next. This is the diffusion /
-smoothing behavior.
-
-**2. Noise part: σ dW_t**
-
-- W_t is a Wiener process (Brownian motion) - continuous time, pure
-  random noise.
-- dW_t is a tiny random increment of that noise.
-- σ controls the noise strength - larger σ means bigger random jitter.
-
-This term tells the model: "real data has randomness, so we add a
-stochastic term explicitly instead of ignoring it."
-
-**Put together**: node states drift toward their neighborhood's
-average, but the path isn't a straight line - it's a random walk
-around that trend, and we model both parts mathematically instead
-of averaging them away.
-
-### Euler-Maruyama: from continuous math to discrete code
-
-Computers can't simulate continuous time - they work in discrete
-steps. Euler-Maruyama approximates the SDE by breaking it into small
-time steps:
-
-    X_{t+Δt} = X_t - L X_t · Δt + σ√Δt · Z
-
-Where:
-- Δt is a small time step (e.g. 0.01, 0.1)
-- Z is a standard normal random vector, sampled fresh at each step
-- √Δt correctly scales the noise to match Brownian motion's
-  statistical properties
-
-**Deterministic part in code**: at each step, compute -L X_t, scale
-by Δt, and add to X_t. This is pure matrix multiplication - fully
-predictable.
-
-**Noise part in code**: at each step, sample a random vector Z
-(`randn` in Julia), scale it by σ√Δt, and add it to X_t. This
-injects small random jumps that approximate continuous Brownian
-motion.
-
-We implement this from scratch (no third-party SDE libraries) to
-show the mechanics explicitly rather than treating the solver as a
-black box.
-
-## Results So Far
-
-Simulating a 4 node chain graph with an initial spike at node 1,
-comparing clean diffusion vs. the stochastic (noisy) version:
-
-![Clean vs Noisy Diffusion](notebooks/all_nodes_diffusion.png)
-
-Even with random noise injected at every step, the noisy trajectory
-(red) tracks the same overall trend as the clean deterministic
-diffusion (blue) - demonstrating that the Laplacian's structural pull
-dominates over random fluctuation.
-
-## Benchmark: GraphStoch vs Naive Neighbor Averaging
-
-We compared GraphStoch's diffusion process against a naive GNN-style
-baseline (iterative neighbor averaging) on a 30-node random graph
-with heavy noise (σ=2.0 relative to signal scale).
-
-**Key finding**: naive averaging converges quickly but plateaus at a
-suboptimal error (~0.237 MSE) because repeated unweighted averaging
-over-smooths the graph - nodes lose their individual structure and
-collapse toward a single average value. GraphStoch continues to
-improve with more steps (0.36 -> 0.20 -> 0.17 MSE) since the
-Laplacian-based dynamics preserve more of the underlying graph
-structure.
-
-We also found that step size (dt) is critical for the Euler-Maruyama
-solver: dt=0.1 gives stable convergence, but dt≥0.2 causes the
-solution to diverge numerically - a known stability constraint of
-Euler-based SDE solvers, confirming the theory behind why small step
-sizes are required.
-
-| Iterations | Naive MSE | GraphStoch MSE (dt=0.1) |
-|---|---|---|
-| 3  | 0.473 | 1.118 |
-| 5  | 0.285 | 0.717 |
-| 10 | 0.233 | 0.363 |
-| 20 | 0.237 | 0.201 |
-| 50 | 0.238 | **0.173** |
-
-GraphStoch requires more iterations to converge but avoids the
-over-smoothing plateau naive averaging suffers from, at the cost of
-slower initial convergence.
-
-## Solver Comparison: Euler-Maruyama vs SRA3
-
-The from-scratch Euler-Maruyama (EM) implementation above is educational
-and transparent, but as a fixed-step method it has a hard numerical
-stability limit tied to the largest eigenvalue of the graph Laplacian
-(`dt < 2/λ_max`). Exceeding that limit causes the solution to diverge.
-
-Since the noise term in this model is additive (σ is constant, not
-state-dependent), the equation is a good fit for **SRA3** - a Stochastic
-Runge-Kutta method with adaptive step size, available in
-[StochasticDiffEq.jl](https://github.com/SciML/StochasticDiffEq.jl)
-(part of the SciML ecosystem). This suggestion came from
-[Chris Rackauckas](https://github.com/ChrisRackauckas) after sharing
-early results with the SciML community.
-
-**Test setup**: 4-node chain graph, X0 = [10, 0, 0, 0], σ = 0.5,
-dt = 0.7 (above this graph's stability limit of ~0.586).
-
-| Method | Step size | Final state | Result |
-|---|---|---|---|
-| Euler-Maruyama (from scratch) | Fixed, dt=0.7 | [547, -1309, 1314, -541] | Diverged |
-| SRA3 (StochasticDiffEq.jl) | Adaptive | [2.89, 2.75, 2.86, 2.63] | Stable, converged |
-
-SRA3's adaptive stepping automatically takes smaller internal steps when
-needed, without the user having to hand-pick a safe dt. Going forward,
-SRA3 is used as the primary solver for production runs, while the
-from-scratch EM implementation is kept as an explicit, interpretable
-baseline for illustrating the stability trade-off.
-
-**Note**: this result demonstrates instability at one specific step size
-on one specific graph - it is not a claim that SRA3 is universally better
-in all regimes, only that it is well-suited for additive-noise SDEs like
-this one.
-
-## Real Dataset Benchmark: Zachary's Karate Club
-
-All benchmarks so far used synthetic Erdos-Renyi random graphs. To test
-GraphStoch on something real and citable, we used
-[Zachary's Karate Club](https://en.wikipedia.org/wiki/Zachary%27s_karate_club) -
-a well-known social network of 34 real people (34 nodes, 78 edges),
-collected in the 1970s, available built-in via `networkx.karate_club_graph()`.
-
-**Setup**: a synthetic "true signal" (representing something like an
-influence/activity score) was generated by diffusing a random seed with
-GraphStoch itself, then heavy observation noise (σ=2.0) was added on top.
-Both naive neighbor averaging and GraphStoch were then used to try to
-recover the true signal from the noisy observations.
-
-**Important lesson learned**: real graphs with high-degree "hub" nodes have
-a much tighter stability limit than simple toy graphs. For this graph,
-`stable_dt()` returned only 0.0384 (vs ~0.586 for the earlier 4-node chain).
-Hardcoding a fixed dt (as done in earlier benchmarks) caused a silent,
-catastrophic explosion here (values blew up to ~10^83). The fix, and the
-general principle going forward: **always derive dt from the graph's own
-Laplacian eigenvalues** (we use 50% of `stable_dt()` as a safety margin)
-rather than assuming one fixed value works across different graph structures.
-
-### Results
-
-| | MSE |
-|---|---|
-| Raw noisy data | 3.8211 |
-| Naive GNN averaging | 3.3835 |
-| **GraphStoch denoising** | **0.0712** |
-
-GraphStoch achieves roughly **54x lower error** than naive averaging on
-this real network.
-
-### Convergence across iterations
-
-| Iterations | Naive MSE | GraphStoch MSE |
-|---|---|---|
-| 3   | 3.3861 | 1.2519 |
-| 5   | 3.3837 | 0.8591 |
-| 10  | 3.3835 | 0.4199 |
-| 20  | 3.3835 | 0.1574 |
-| 50  | 3.3835 | 0.0712 |
-| 100 | 3.3835 | 0.0676 |
-
-![Karate Club Convergence](notebooks/karate_club_convergence.png)
-
-Naive averaging plateaus almost immediately (~3.38 MSE) on this real
-network - likely because a few very high-degree "hub" members (e.g. the
-instructor/president nodes in the real Karate Club social structure) cause
-naive 1-hop averaging to over-smooth badly. GraphStoch's Laplacian-based
-diffusion continues improving steadily instead of collapsing early.
-
-![Karate Club Denoising](notebooks/karate_club_denoising.png)
-
-**Honest caveat**: the dt used for GraphStoch here is very small (~0.0192)
-due to the stability constraint on this graph, while naive averaging's
-"iterations" are unitless hops. This means iteration count isn't directly
-comparable as a measure of total diffusion "time" between the two methods -
-the comparison above is on final achievable accuracy, not on time-matched
-convergence speed.
-
-## Real Dataset Benchmark: Cora, Citeseer & PubMed - Denoising as GNN Preprocessing
-
-The Karate Club benchmark above tests pure signal recovery on a small graph.
-To see how GraphStoch holds up at larger scale and against learned models, we
-tested it on two standard citation-network datasets -
-[Cora](https://relational.fit.cvut.cz/dataset/CORA) (2,708 nodes, 1,433
-features, 7 classes) and [Citeseer](https://linqs.org/datasets/#citeseer-doc-classification)
-(3,327 nodes, 3,703 features, 6 classes) - loaded via `torch_geometric`'s
-`Planetoid` loader, and compared against three widely used GNN architectures:
-GCN, GraphSAGE, and GAT.
-
-**Framing**: Cora and Citeseer are node-*classification* datasets, while
-GraphStoch is a denoising method for continuous signal recovery - directly
-comparing GraphStoch's MSE to a classifier's accuracy would be an
-apples-to-oranges comparison. Instead we frame this as **denoising as GNN
-preprocessing**:
-
-1. Inject synthetic Gaussian noise into the node features.
-2. Compare noisy features → Logistic Regression vs. GraphStoch-denoised
-   features → Logistic Regression, to isolate GraphStoch's own contribution.
-3. Compare both against noisy features fed directly into end-to-end trained
-   GCN / GraphSAGE / GAT models - i.e. "let the GNN learn to handle the noise
-   itself."
-
-**Setup**: features were row-normalized via `T.NormalizeFeatures()`, which is
-standard preprocessing for these bag-of-words datasets - GNN baselines run
-without it underperform published benchmarks by several points, so this is a
-required step rather than an optional tweak. GNNs were trained with Adam
-(lr=0.01, weight_decay=5e-4) and validation-based early stopping (patience=50,
-max 300 epochs). Three noise levels (0.1x / 0.5x / 1.0x feature std) were each
-run across 10 random seeds, with paired t-tests comparing GraphStoch-denoised
-features + Logistic Regression against each GNN.
-
-### Cora results
-
-| Noise level | LogReg (noisy) | LogReg (GraphStoch-denoised) | GCN | GraphSAGE | GAT |
-|---|---|---|---|---|---|
-| Low    | 0.5726 | 0.7394 | **0.8152** | 0.7884 | **0.8249** |
-| Medium | 0.5510 | 0.7402 | **0.8096** | 0.7921 | **0.8187** |
-| Heavy  | 0.4893 | 0.7286 | **0.7927** | 0.7667 | **0.8006** |
-
-All nine paired comparisons (3 noise levels × 3 GNNs) are statistically
-significant (p<0.0001) - and the GNNs win every single one, by 4 to 9
-percentage points.
-
-### Citeseer results
-
-| Noise level | LogReg (noisy) | LogReg (GraphStoch-denoised) | GCN | GraphSAGE | GAT |
-|---|---|---|---|---|---|
-| Low    | 0.6185 | **0.7225** | 0.6995 | 0.6978 | 0.7169 |
-| Medium | 0.6072 | **0.7198** | 0.7071 | 0.6899 | 0.7104 |
-| Heavy  | 0.5703 | **0.7097** | 0.6977 | 0.6815 | 0.6999 |
-
-Here the result flips: GraphStoch-denoised features + Logistic Regression
-win 8 of 9 comparisons (p<0.05), by 1 to 3 percentage points. The one
-exception - vs. GAT at low noise - is not statistically significant.
-
-### PubMed results
-
-To help disentangle *why* GraphStoch wins on Citeseer but loses on Cora, we
-extended the same experiment to a third citation dataset,
-[PubMed](https://linqs.org/datasets/#pubmed-diabetes) (19,717 nodes, 500
-features, 3 classes) - identical setup (normalized features, same GNN
-hyperparameters, same 3 noise levels × 10 seeds, same paired t-tests).
-
-| Noise level | LogReg (noisy) | LogReg (GraphStoch-denoised) | GCN | GraphSAGE | GAT |
-|---|---|---|---|---|---|
-| Low    | 0.7321 | 0.7614 | **0.7899** | 0.7703 | 0.7775 |
-| Medium | 0.7146 | 0.7539 | **0.7800** | 0.7638 | 0.7718 |
-| Heavy  | 0.6529 | 0.7260 | **0.7593** | 0.7335 | 0.7557 |
-
-On PubMed, GNNs win the direction in all 9 comparisons, and 8 of 9 are
-statistically significant (p<0.05) - the one exception (GraphSAGE at heavy
-noise, p=0.35) is not significant, but the mean difference still favors GNN.
-This matches Cora's pattern, not Citeseer's.
-
-**Why this matters - a structural comparison across all three datasets:**
-we also computed six candidate graph/feature properties (connectivity,
-algebraic connectivity λ₂, feature-dim/node ratio, edge homophily, average
-degree, feature sparsity) for all three datasets
-(`python/compute_dataset_properties.py`). On Cora and Citeseer, all six
-properties moved together - Citeseer was more fragmented, lower λ₂, lower
-homophily, sparser, and had a higher feature-dim/node ratio, so the six
-hypotheses were completely confounded with only two datapoints. PubMed
-breaks this bundle: it is fully connected with the *highest* λ₂, average
-degree, and homophily close to Cora's of all three datasets - by those four
-measures it looks "Cora-like or better," not Citeseer-like. But on
-feature-dim/node ratio and feature sparsity specifically, PubMed is even
-more extreme than Citeseer.
-
-PubMed's classification result (GNNs win, Cora's pattern) tracks its
-connectivity / λ₂ / homophily / average degree profile, not its feature-dim
-ratio or sparsity profile. This is evidence that **graph structural
-properties (connectivity, algebraic connectivity, homophily, degree) are
-more likely to drive the GraphStoch-vs-GNN flip than feature-level
-properties (dimensionality ratio, sparsity)** - though with three datapoints
-this is still a correlational, not causal, conclusion. Isolating the true
-driver among these four remaining structural candidates requires a
-controlled synthetic-graph sweep (varying one property at a time while
-holding the others fixed), which is the planned next step.
-
-**Honest conclusion**: GraphStoch's standing relative to learned GNNs is
-**dataset-dependent**, not a clean win or loss either way. On Cora and
-PubMed, GNNs clearly outperform GraphStoch-denoised-features-plus-LogReg.
-On Citeseer, GraphStoch-denoised-features-plus-LogReg holds a modest but
-consistent edge over all three GNN baselines. We are not claiming GraphStoch
-"beats" GNNs in general - the takeaway is that a fixed, non-learned,
-training-free denoising step is a genuinely competitive preprocessing
-baseline on some graphs and a clearly weaker one on others, and that this
-variation itself points toward specific structural graph properties
-(connectivity, algebraic connectivity, homophily, degree) as the more
-likely explanation, rather than feature-level properties.
-
-*Methodological note: an earlier version of the Cora/Citeseer experiment,*
-*run without `T.NormalizeFeatures()`, produced misleadingly strong results*
-*for GraphStoch on both datasets. That version was discarded once the*
-*missing normalization was identified as the cause - row-normalization is*
-*required for these bag-of-words features to get GNN baselines that match*
-*published accuracy.*
-
-## Controlled Synthetic Experiment: Isolating Homophily as a Causal Driver
-
-The three real datasets above narrowed the explanation for the GraphStoch-
-vs-GNN flip down to four correlated structural candidates (connectivity,
-algebraic connectivity λ₂, edge homophily, average degree) - but with only
-three real datapoints, these four properties still move together and
-cannot be told apart from real data alone. To isolate a single property,
-we built a controlled synthetic experiment using a two-community
-**Stochastic Block Model (SBM)**: node count (1,000), average degree
-(~6.0), and feature signal strength are held fixed, and **only edge
-homophily is varied** (0.5 to 0.9), with independently-generated,
-label-conditional Gaussian features so that the base classification
-difficulty is identical at every homophily level. The same denoising-as-
-preprocessing protocol (GraphStoch+LogReg vs. GCN/GraphSAGE/GAT, paired
-t-tests) was applied at each level.
-
-### Result: a clean, replicated crossover
-
-| Homophily | GCN | GraphSAGE | GAT | GraphStoch+LogReg |
-|---|---|---|---|---|
-| 0.50 | 0.6050 | 0.6815 | 0.5660 | 0.5305 |
-| 0.60 | 0.6640 | 0.7070 | 0.6640 | 0.4970 |
-| 0.70 | 0.7940 | 0.7570 | 0.7685 | 0.5885 |
-| 0.80 | 0.8815 | 0.8605 | 0.8680 | **0.8850** |
-| 0.90 | 0.9485 | 0.9355 | 0.9430 | **0.9775** |
-
-At low-to-moderate homophily (0.5-0.7), GNNs win clearly and significantly.
-Somewhere between 0.7 and 0.8, the result flips: GraphStoch+LogReg pulls
-ahead and wins decisively at 0.8-0.9. This crossover was **replicated
-across three independent graph realizations** (seeds 42, 43, 44, each with
-5 independent noise draws):
-
-| Homophily | Seed 42 | Seed 43 | Seed 44 |
-|---|---|---|---|
-| 0.50 | GNNs win (3/3) | GNNs win (3/3) | GNNs win (3/3) |
-| 0.60 | GNNs win (3/3) | GNNs win (3/3) | GNNs win (3/3) |
-| 0.70 | GNNs win (3/3) | GNNs win (3/3) | GNNs win (3/3) |
-| 0.80 | GraphStoch wins (3/3) | GNNs win (3/3) | GNNs win (3/3) |
-| 0.90 | GraphStoch wins (3/3) | GraphStoch wins (3/3) | GraphStoch wins (3/3) |
-
-The *direction* of the effect is fully replicated: low homophily always
-favors GNNs, high homophily always favors GraphStoch. The *exact* crossover
-point shifts slightly between graph realizations (0.7-0.8 for seed 42,
-0.8-0.9 for seeds 43/44) - this is expected statistical variation across
-random graph draws, not an inconsistency we are hiding. **This is causal,
-not merely correlational, evidence that edge homophily drives (at least
-part of) the GraphStoch-vs-GNN flip**, since node count, average degree,
-and feature difficulty were held fixed throughout.
-
-### An honest limitation this experiment surfaces
-
-Real Citeseer's homophily is 0.7355. In the synthetic sweep, homophily 0.70
-gives GNNs a clear, significant win in all three graph realizations - yet
-on real Citeseer, **GraphStoch wins**. Homophily alone does not fully
-explain Citeseer's result. The most likely remaining explanation is
-Citeseer's extreme fragmentation (438 connected components and 48 isolated
-nodes, far more than Cora or PubMed) acting as an additional, independent
-factor pushing the result toward GraphStoch beyond what homophily alone
-would predict. Isolating fragmentation's independent contribution - by
-running an analogous synthetic sweep that varies connectivity/isolated-node
-count while holding homophily fixed - is the planned next step.
-
-### Theoretical Grounding: A Spectral Detectability Threshold
-
-The homophily crossover observed above is not just an empirical pattern -
-it has a theoretical explanation. GraphStoch's diffusion mechanism is,
-on a two-community SBM, mechanistically close to spectral clustering
-(both rely on the sign of the graph's second eigenvector). Random graph
-theory gives an exact threshold for when community structure is even
-detectable via spectral methods at all: the Kesten-Stigum / Abbe
-detectability threshold, `h* = 1/2 + 1/(2*sqrt(d))`. For this sweep's
-average degree (d ≈ 6.0), this predicts `h* ≈ 0.7041` - and independent
-spectral-clustering simulations (30 graph draws per homophily level)
-confirm the transition from chance-level to strong community detection
-happens almost exactly in the range 0.69-0.78, tightly bracketing this
-prediction. The empirical classification crossover (0.70-0.90) sits at or
-just above this threshold, exactly as expected: right at `h*`, structure
-is only barely detectable, so a comfortable classification advantage
-requires homophily somewhat past it. Full derivation, numerical
-verification, and an honest scope statement (this threshold explains
-GraphStoch's own mechanism, not GNN behavior in general) are in
-`THEORY.md`, Section 7.
+```bash
+git clone https://github.com/ArpanC6/graphstoch.git
+cd graphstoch
+
+# Python side (creates/activates a venv under python/venv is recommended)
+cd python
+pip install -r requirements.txt   # torch, torch_geometric, scipy, scikit-learn, networkx, juliacall
+
+# Julia core is managed automatically by juliacall on first import - no
+# separate Julia installation step is required beyond having Julia itself
+# on your system (or letting juliacall provision its own isolated Julia).
+```
+
+> Note: import `graphstoch` (or anything from `juliacall`) **before** importing `torch` in any script - this ordering avoids a known juliacall/torch initialization conflict.
+
+## Quick Example
+
+```python
+from graphstoch import GraphSDE
+import numpy as np
+
+# adjacency matrix of your graph (n x n, symmetric, 0/1)
+A = np.array(...)
+
+model = GraphSDE(A, noise_level=0.5, dt=0.01)
+
+# safe step size for this specific graph's Laplacian spectrum
+safe_dt = model.stable_dt() * 0.5
+model = GraphSDE(A, noise_level=0.5, dt=safe_dt)
+
+noisy_features = ...          # (n_nodes, n_features) array
+denoised = model.denoise(noisy_features, time_steps=50)
+```
+
+## Headline Results
+
+- **Zachary's Karate Club** (real 34-node social network): GraphStoch denoising achieves **~54x lower MSE** than naive neighbor-averaging when recovering a noisy signal (0.0712 vs 3.3835).
+- **Cora / Citeseer / PubMed** (denoising-as-GNN-preprocessing): result is dataset-dependent - GNNs win clearly on Cora and PubMed, but GraphStoch+LogReg holds a modest, statistically significant edge on Citeseer.
+- **Controlled synthetic homophily sweep**: isolates edge homophily as a *causal* driver of this flip - GNNs win below homophily ~0.7-0.8, GraphStoch wins above it, replicated across 3 independent graph realizations.
+- **Spectral detectability threshold**: this crossover is not just empirical - it matches a predicted threshold `h* = 1/2 + 1/(2*sqrt(d)) ~ 0.7041` from random graph theory (Kesten-Stigum/Abbe), independently verified via spectral clustering simulation.
+- **Controlled synthetic fragmentation sweep**: tested whether graph fragmentation (isolated nodes) explains why real Citeseer favors GraphStoch despite its homophily being in the "GNNs should win" range. Result: fragmentation does **not** produce a crossover at homophily below h* - instead it revealed a provable mechanism (isolated nodes are an exact fixed point of GraphStoch's diffusion, so they're exempt from - but never benefit beyond - the noisy baseline).
+
+Full methodology, tables, and per-seed statistics for all of the above are in **`BENCHMARKS.md`**.
+
+## Theory Summary
+
+GraphStoch's SDE has a closed-form Ornstein-Uhlenbeck solution, a provable Euler-Maruyama stability threshold (`dt < 2/lambda_max(L)`), and provably achieves strong convergence order 1.0 (a full order better than the general SDE case) because its noise is additive. The homophily crossover in the benchmarks above is explained by an exact spectral detectability threshold from random graph theory, and the fragmentation sweep's null result is explained by an exact algebraic fact about the Laplacian's null space for isolated nodes. Full derivations, proofs, and honest scope statements for all of these are in **`THEORY.md`**.
 
 ## Status
 
 - [x] Phase 1: Graph Laplacian construction (from scratch)
 - [x] Phase 2: Euler-Maruyama SDE solver (from scratch)
-- [x] Phase 3: Python wrapper (juliacall) - `GraphSDE` class with
-      `.simulate()`, `.denoise()`, `.stable_dt()` methods
-- [x] Phase 4: Benchmark vs standard GNN on noisy data
-- [x] Phase 5: SRA3 adaptive solver integration (StochasticDiffEq.jl)
-      for improved numerical stability
-- [x] Phase 6: Real dataset benchmark (Zachary's Karate Club) with
-      dynamically-derived stable dt and denoising visualizations
-- [x] Phase 7: Cora & Citeseer benchmarks - GraphStoch-denoised features
-      as GNN preprocessing, compared against GCN / GraphSAGE / GAT
-- [x] Phase 8: PubMed benchmark - confirms Cora's pattern (GNNs win),
-      helps disentangle structural vs feature-level explanations for the
-      Cora/Citeseer flip
-- [x] Phase 9: Controlled synthetic (SBM) homophily sweep - replicated
-      across 3 graph realizations, establishes homophily as a causal (not
-      just correlational) driver; surfaces fragmentation as a likely
-      additional factor, not yet isolated
+- [x] Phase 3: Python wrapper (juliacall) - `GraphSDE` class with `.simulate()`, `.denoise()`, `.stable_dt()`
+- [x] Phase 4: Benchmark vs standard GNN on noisy synthetic data
+- [x] Phase 5: SRA3 adaptive solver integration (`StochasticDiffEq.jl`) for improved numerical stability
+- [x] Phase 6: Real dataset benchmark (Zachary's Karate Club) with dynamically-derived stable dt
+- [x] Phase 7: Cora & Citeseer benchmarks vs GCN / GraphSAGE / GAT
+- [x] Phase 8: PubMed benchmark - disentangles structural vs feature-level explanations for the Cora/Citeseer flip
+- [x] Phase 9: Controlled synthetic homophily sweep - establishes homophily as a causal driver, replicated across 3 seeds
+- [x] Phase 10: Controlled synthetic fragmentation sweep - rules out fragmentation as the Citeseer explanation below h*; identifies the null-space exemption mechanism
+- [ ] Phase 11: Near-threshold fragmentation sweep (homophily ~0.65-0.70) - open question, not yet run
+- [ ] Phase 12: README/BENCHMARKS/THEORY cross-linking pass, Zenodo DOI, arXiv preprint
 
 ## Tech Stack
 
 - **Julia**: core simulation engine
 - **StochasticDiffEq.jl**: adaptive SRA3 solver for additive-noise SDEs
 - **Python**: wrapper API, via juliacall (`GraphSDE` class)
-- **Plots.jl**: visualization
-- **NetworkX**: real-world graph datasets (Zachary's Karate Club)
-- **Matplotlib**: Karate Club visualizations
-- **PyTorch Geometric**: Cora/Citeseer dataset loading and GNN baselines
-  (GCN, GraphSAGE, GAT)
-- **scikit-learn**: Logistic Regression baseline for the denoising-as-
-  preprocessing comparison
+- **NetworkX**: real-world and synthetic graph generation
+- **PyTorch Geometric**: Cora/Citeseer/PubMed dataset loading and GNN baselines (GCN, GraphSAGE, GAT)
+- **scikit-learn**: Logistic Regression baseline for the denoising-as-preprocessing comparison
+
+## Future Work
+
+- Test fragmentation's effect near the spectral detectability threshold (homophily ~0.65-0.70) rather than well below it - the current fragmentation result rules out one regime, not all of them.
+- Set up a Zenodo DOI for tagged releases, so this work is citably archived.
+- Target an arXiv preprint once the above is settled.
+
+## Citation
+
+If you use GraphStoch in your own work, please cite this repository:
+
+```
+Chakraborty, A. GraphStoch: Stochastic Differential Equation modeling
+for noise-robust node state prediction on graphs.
+https://github.com/ArpanC6/graphstoch
+```
+
+A Zenodo DOI for a citable, versioned release is planned (see Future Work).
 
 ## License
 

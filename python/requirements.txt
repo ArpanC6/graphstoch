@@ -1,0 +1,15 @@
+# Core Julia bridge
+juliacall
+
+# Scientific Python stack
+numpy
+networkx
+scipy
+scikit-learn
+
+# PyTorch (CPU build was used in development; for the CPU-only wheel index run:
+#   pip install torch==2.12.1 --index-url https://download.pytorch.org/whl/cpu
+# before installing the rest of this file, or drop the version pin below to
+# let pip pick whatever build is appropriate for your machine/CUDA setup)
+torch==2.12.1
+torch_geometric==2.8.0
