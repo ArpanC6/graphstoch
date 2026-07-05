@@ -263,3 +263,32 @@ detectability signal differently. This has not been tested and remains
 an open question; testing fragmentation near h* (~0.65-0.70) rather than
 well below it is a natural next step. See `THEORY.md` Section 8.4 for the
 full scope statement.
+
+### Fragmentation sweep extended to h = 0.68 and h = 0.73
+
+Following the h = 0.60 fragmentation sweep above, the same experiment
+was repeated at h = 0.68 (near h* ≈ 0.7041) and h = 0.73 (above h*,
+matching real Citeseer's homophily of 0.7355).
+
+**Crossover summary (GNNs beating GraphStoch+LogReg out of 3 comparisons,
+per isolation fraction, per seed) -- identical pattern at all three
+homophily levels:**
+
+| isolation_fraction | h=0.60 | h=0.68 | h=0.73 |
+|---|---|---|---|
+| 0.00 | 3/3/3 | 3/3/3 | 3/3/3 |
+| 0.02 | 3/3/3 | 3/3/3 | 3/3/3 |
+| 0.05 | 3/3/3 | 3/3/3 | 3/3/3 |
+| 0.10 | 3/3/3 | 3/3/3 | 3/3/3 |
+| 0.20 | 3/3/3 | 3/3/3 | 3/3/3 |
+| 0.30 | 3/3/3 | 3/3/3 | 3/3/3 |
+
+(each cell: seed 42/seed 43/seed 44 GNN win-counts; 3 = all three GNNs
+beat GraphStoch+LogReg)
+
+No crossover against GNN baselines occurred at any tested homophily
+level. See THEORY.md Section 9 for the seed-44 sign-flip finding at
+h = 0.73 (denoising becomes net-beneficial rather than net-harmful for
+one of three graph realizations) and the resulting honest conclusion
+that feature-level effects, not homophily/fragmentation, are the likely
+explanation for real Citeseer's behavior.

@@ -88,7 +88,7 @@ GraphStoch's SDE has a closed-form Ornstein-Uhlenbeck solution, a provable Euler
 - [x] Phase 8: PubMed benchmark - disentangles structural vs feature-level explanations for the Cora/Citeseer flip
 - [x] Phase 9: Controlled synthetic homophily sweep - establishes homophily as a causal driver, replicated across 3 seeds
 - [x] Phase 10: Controlled synthetic fragmentation sweep - rules out fragmentation as the Citeseer explanation below h*; identifies the null-space exemption mechanism
-- [ ] Phase 11: Near-threshold fragmentation sweep (homophily ~0.65-0.70) - open question, not yet run
+- [x] Phase 11: Near- and above-threshold fragmentation sweep (h=0.68, h=0.73) - rules out homophily/fragmentation as sufficient explanation for real Citeseer even above h*; finds a fragile seed-dependent sign-flip consistent with theory
 - [x] Phase 12a: Zenodo DOI set up for citable, versioned releases (10.5281/zenodo.21208912)
 - [ ] Phase 12b: README/BENCHMARKS/THEORY cross-linking pass, arXiv preprint
 
@@ -103,7 +103,7 @@ GraphStoch's SDE has a closed-form Ornstein-Uhlenbeck solution, a provable Euler
 
 ## Future Work
 
-- Test fragmentation's effect near the spectral detectability threshold (homophily ~0.65-0.70) rather than well below it - the current fragmentation result rules out one regime, not all of them.
+- Investigate feature-level (rather than structural) explanations for real Citeseer's advantage, since homophily and fragmentation are now ruled out at all tested levels.
 - Target an arXiv preprint once the above is settled.
 
 ## Citation
