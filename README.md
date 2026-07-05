@@ -90,7 +90,7 @@ GraphStoch's SDE has a closed-form Ornstein-Uhlenbeck solution, a provable Euler
 - [x] Phase 10: Controlled synthetic fragmentation sweep - rules out fragmentation as the Citeseer explanation below h*; identifies the null-space exemption mechanism
 - [x] Phase 11: Near- and above-threshold fragmentation sweep (h=0.68, h=0.73) - rules out homophily/fragmentation as sufficient explanation for real Citeseer even above h*; finds a fragile seed-dependent sign-flip consistent with theory
 - [x] Phase 12a: Zenodo DOI set up for citable, versioned releases (10.5281/zenodo.21208912)
-- [ ] Phase 12b: README/BENCHMARKS/THEORY cross-linking pass, arXiv preprint
+- [ ] Phase 12b: README/BENCHMARKS/THEORY cross-linking pass,
 
 ## Tech Stack
 
