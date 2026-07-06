@@ -23,6 +23,14 @@ import copy
 # lucky single draw, this version repeats the whole sweep across three
 # independent graph realizations (seeds 42, 43, 44) to check whether the
 # crossover location is stable.
+#
+# v2b change: adds a bistable (Allen-Cahn-type) reaction-diffusion
+# denoising variant alongside plain Laplacian diffusion, tested on this
+# classification pipeline (rather than continuous MSE denoising, where
+# a prior sandbox test showed the fixed +/-1 reaction poles are
+# mismatched with an arbitrary-range continuous signal). Classification
+# is the setting where bistable reaction terms are expected to help,
+# per GREAD (Choi et al., 2023) and ACMP (Wang et al., 2023).
 
 N_NODES = 1000
 AVG_DEGREE = 6.0
@@ -39,6 +47,7 @@ GRAPH_SEEDS = [42, 43, 44]   # three independent graph realizations, for replica
 NOISE_SEEDS = list(range(5))  # noise draws per graph realization
 NOISE_FRACTION = 0.5  # fixed at "medium" noise for all runs, to keep total runtime tractable
                        # while still isolating the one axis of interest (homophily)
+BETA_REACTION = 0.5  # bistable reaction strength to test, chosen from prior sandbox exploration
 
 
 def make_sbm_graph(n_nodes, avg_degree, homophily_target, seed):
@@ -178,7 +187,8 @@ def eval_logreg(X_features, y, train_mask, test_mask):
 # Main sweep: outer loop over graph seed (replication), then homophily level,
 # then noise seed.
 
-results = {gs: {h: {"logreg_noisy": [], "logreg_denoised": [], "gcn": [], "graphsage": [], "gat": []}
+results = {gs: {h: {"logreg_noisy": [], "logreg_denoised": [], "logreg_denoised_reaction": [],
+                     "gcn": [], "graphsage": [], "gat": []}
                 for h in HOMOPHILY_LEVELS}
            for gs in GRAPH_SEEDS}
 
@@ -217,9 +227,11 @@ for graph_seed in GRAPH_SEEDS:
             rng = np.random.default_rng(seed)
             X_noisy = X_clean + rng.normal(0, noise_std, size=X_clean.shape).astype(np.float32)
             X_denoised = np.array(gs_model.denoise(X_noisy, time_steps=50))
+            X_denoised_reaction = gs_model.denoise_with_reaction(X_noisy, beta=BETA_REACTION, time_steps=50)
 
             acc_noisy = eval_logreg(X_noisy, labels, train_mask, test_mask)
             acc_denoised = eval_logreg(X_denoised, labels, train_mask, test_mask)
+            acc_denoised_reaction = eval_logreg(X_denoised_reaction, labels, train_mask, test_mask)
 
             x_noisy_tensor = torch.tensor(X_noisy, dtype=torch.float32)
             torch.manual_seed(seed)
@@ -234,6 +246,7 @@ for graph_seed in GRAPH_SEEDS:
 
             results[graph_seed][h]["logreg_noisy"].append(acc_noisy)
             results[graph_seed][h]["logreg_denoised"].append(acc_denoised)
+            results[graph_seed][h]["logreg_denoised_reaction"].append(acc_denoised_reaction)
             results[graph_seed][h]["gcn"].append(acc_gcn)
             results[graph_seed][h]["graphsage"].append(acc_sage)
             results[graph_seed][h]["gat"].append(acc_gat)
@@ -247,7 +260,7 @@ for graph_seed in GRAPH_SEEDS:
         print(f"  Homophily {h:.2f} (actual {property_log[graph_seed][h]['actual_homophily']:.4f})")
         for method, accs in results[graph_seed][h].items():
             arr = np.array(accs)
-            print(f"    {method:16s}: {arr.mean():.4f} +/- {arr.std():.4f}")
+            print(f"    {method:24s}: {arr.mean():.4f} +/- {arr.std():.4f}")
 
 print("\nPAIRED T-TEST per graph realization: GraphStoch(denoised)+LogReg vs each GNN baseline")
 crossover_summary = {}
@@ -256,6 +269,7 @@ for graph_seed in GRAPH_SEEDS:
     crossover_summary[graph_seed] = {}
     for h in HOMOPHILY_LEVELS:
         denoised = np.array(results[graph_seed][h]["logreg_denoised"])
+        denoised_reaction = np.array(results[graph_seed][h]["logreg_denoised_reaction"])
         print(f"  Homophily {h:.2f}")
         gnn_wins = 0
         for method in ["gcn", "graphsage", "gat"]:
@@ -268,6 +282,11 @@ for graph_seed in GRAPH_SEEDS:
             sig = "significant p<0.05" if p_val < 0.05 else "not significant"
             print(f"    vs {method:10s}: mean_diff={mean_diff:+.4f} t={t_stat:.3f} p={p_val:.4f} "
                   f"{sig} {direction}")
+        t_stat_r, p_val_r = stats.ttest_rel(denoised_reaction, denoised)
+        mean_diff_r = denoised_reaction.mean() - denoised.mean()
+        sig_r = "significant p<0.05" if p_val_r < 0.05 else "not significant"
+        print(f"    [reaction vs plain diffusion]: mean_diff={mean_diff_r:+.4f} t={t_stat_r:.3f} "
+              f"p={p_val_r:.4f} {sig_r} ({'reaction wins' if mean_diff_r > 0 else 'plain wins'})")
         crossover_summary[graph_seed][h] = gnn_wins  # 0..3, how many GNNs beat GraphStoch here
 
 print("\nCROSSOVER SUMMARY (how many of the 3 GNNs beat GraphStoch+LogReg at each homophily level, per graph seed)")
@@ -279,7 +298,7 @@ for h in HOMOPHILY_LEVELS:
     print(row)
 print("(3 = GNNs win all three comparisons, 0 = GraphStoch+LogReg wins all three)")
 
-with open("synthetic_homophily_sweep_results_v2.json", "w") as f:
+with open("synthetic_homophily_sweep_results_v2b_reaction.json", "w") as f:
     json.dump({
         "properties": {str(gs): {str(h): property_log[gs][h] for h in HOMOPHILY_LEVELS} for gs in GRAPH_SEEDS},
         "results": {str(gs): {str(h): {k: list(v) for k, v in results[gs][h].items()} for h in HOMOPHILY_LEVELS}
@@ -287,4 +306,4 @@ with open("synthetic_homophily_sweep_results_v2.json", "w") as f:
         "crossover_summary": {str(gs): {str(h): crossover_summary[gs][h] for h in HOMOPHILY_LEVELS}
                               for gs in GRAPH_SEEDS}
     }, f, indent=2)
-print("\nSaved raw results to synthetic_homophily_sweep_results_v2.json")
+print("\nSaved raw results to synthetic_homophily_sweep_results_v2b_reaction.json")

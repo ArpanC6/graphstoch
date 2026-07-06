@@ -98,7 +98,7 @@ function sra3_solve(L::AbstractMatrix, X0::AbstractVector, sigma::Float64, tspan
     return sol
 end
 
-# --- Matrix-input overloads (for multi-feature node states, e.g. Cora/Citeseer/PubMed) ---
+# Matrix-input overloads (for multi-feature node states, e.g. Cora/Citeseer/PubMed)
 # Each column of X0/X_noisy is treated as one independent feature diffused
 # over the same graph structure. Multiple dispatch picks these automatically
 # when a matrix (not a vector) is passed in.
@@ -182,5 +182,41 @@ function exact_solve(L::AbstractMatrix, X0::AbstractMatrix, sigma::Float64, t::F
 
     return sample_t, mean_t, var_modes
 end
+"""
+    diffuse_with_teleport(X0, L, alpha, sigma, dt, n_steps)
 
+Euler-Maruyama simulation of the teleport-augmented OU process:
+    dX_t = -(L + alpha*I) X_t dt + alpha*X0 dt + sigma dW_t
+"""
+function diffuse_with_teleport(X0, L, alpha, sigma, dt, n_steps)
+    n = size(X0, 1)
+    M = L + alpha * I(n)
+    X = copy(X0)
+    for _ in 1:n_steps
+        dW = sqrt(dt) * randn(size(X))
+        X = X .+ (-M * X .+ alpha .* X0) .* dt .+ sigma .* dW
+    end
+    return X
+end
+
+"""
+    diffuse_with_reaction(X0, L, beta, sigma, dt, n_steps)
+
+Euler-Maruyama simulation of a reaction-diffusion SDE with a bistable
+(Allen-Cahn-type) reaction term:
+    dX_t = -L X_t dt + beta*(X_t - X_t.^3) dt + sigma dW_t
+
+The reaction term prevents collapse to a single graph-wide constant
+(oversmoothing) by pushing values away from 0 toward +/-1, independent
+of any reference signal X0 - unlike the teleport term, this does not
+require access to (noisy or clean) X0 to function.
+"""
+function diffuse_with_reaction(X0, L, beta, sigma, dt, n_steps)
+    X = copy(X0)
+    for _ in 1:n_steps
+        dW = sqrt(dt) * randn(size(X))
+        X = X .+ (-L * X .+ beta .* (X .- X.^3)) .* dt .+ sigma .* dW
+    end
+    return X
+end
 end # module GraphStoch

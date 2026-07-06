@@ -36,3 +36,9 @@ class GraphSDE:
         eigenvalues = np.linalg.eigvalsh(np.array(self.laplacian))
         lambda_max = eigenvalues[-1]
         return 2.0 / lambda_max
+    def denoise_with_reaction(self, noisy_state, beta, time_steps=50, sigma=0.0):
+        X0 = np.asarray(noisy_state, dtype=float)
+        result = _GraphStoch.diffuse_with_reaction(
+            X0, self.laplacian, beta, sigma, self.dt, time_steps
+        )
+        return np.array(result)
