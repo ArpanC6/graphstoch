@@ -132,7 +132,24 @@ class GAT(torch.nn.Module):
         x = F.elu(self.conv1(x, edge_index))
         x = F.dropout(x, p=0.6, training=self.training)
         return self.conv2(x, edge_index)
+class MLP(torch.nn.Module):
+    """
+    Plain 2-layer MLP, no graph structure at all - operates on each
+    node's feature vector independently. Hidden size matches the GNNs'
+    hidden_channels=16 exactly, so this is a fair capacity-matched
+    ablation: does GraphStoch's explicit Laplacian smoothing, fed into
+    a model with zero implicit smoothing of its own, compete with GNNs
+    that do both smoothing and classification end-to-end?
+    """
+    def __init__(self, in_channels, hidden_channels, out_channels):
+        super().__init__()
+        self.lin1 = torch.nn.Linear(in_channels, hidden_channels)
+        self.lin2 = torch.nn.Linear(hidden_channels, out_channels)
 
+    def forward(self, x, edge_index=None):
+        x = F.relu(self.lin1(x))
+        x = F.dropout(x, p=0.5, training=self.training)
+        return self.lin2(x)
 
 def train_gnn_and_eval(model_class, x_noisy_tensor, edge_index, y, train_mask, val_mask, test_mask,
                         num_features, num_classes, epochs=300, lr=0.01, weight_decay=5e-4, patience=50):
@@ -188,6 +205,7 @@ def eval_logreg(X_features, y, train_mask, test_mask):
 # then noise seed.
 
 results = {gs: {h: {"logreg_noisy": [], "logreg_denoised": [], "logreg_denoised_reaction": [],
+                     "mlp_denoised": [],
                      "gcn": [], "graphsage": [], "gat": []}
                 for h in HOMOPHILY_LEVELS}
            for gs in GRAPH_SEEDS}
@@ -237,6 +255,11 @@ for graph_seed in GRAPH_SEEDS:
             torch.manual_seed(seed)
             acc_gcn = train_gnn_and_eval(GCN, x_noisy_tensor, edge_index, labels, train_mask, val_mask,
                                           test_mask, FEAT_DIM, 2)
+            
+            x_denoised_tensor = torch.tensor(X_denoised, dtype=torch.float32)
+            torch.manual_seed(seed)
+            acc_mlp_denoised = train_gnn_and_eval(MLP, x_denoised_tensor, edge_index, labels,
+                                                   train_mask, val_mask, test_mask, FEAT_DIM, 2)
             torch.manual_seed(seed)
             acc_sage = train_gnn_and_eval(GraphSAGE, x_noisy_tensor, edge_index, labels, train_mask,
                                            val_mask, test_mask, FEAT_DIM, 2)
@@ -247,6 +270,7 @@ for graph_seed in GRAPH_SEEDS:
             results[graph_seed][h]["logreg_noisy"].append(acc_noisy)
             results[graph_seed][h]["logreg_denoised"].append(acc_denoised)
             results[graph_seed][h]["logreg_denoised_reaction"].append(acc_denoised_reaction)
+            results[graph_seed][h]["mlp_denoised"].append(acc_mlp_denoised)
             results[graph_seed][h]["gcn"].append(acc_gcn)
             results[graph_seed][h]["graphsage"].append(acc_sage)
             results[graph_seed][h]["gat"].append(acc_gat)
@@ -270,6 +294,7 @@ for graph_seed in GRAPH_SEEDS:
     for h in HOMOPHILY_LEVELS:
         denoised = np.array(results[graph_seed][h]["logreg_denoised"])
         denoised_reaction = np.array(results[graph_seed][h]["logreg_denoised_reaction"])
+        mlp_denoised = np.array(results[graph_seed][h]["mlp_denoised"])
         print(f"  Homophily {h:.2f}")
         gnn_wins = 0
         for method in ["gcn", "graphsage", "gat"]:
@@ -287,6 +312,25 @@ for graph_seed in GRAPH_SEEDS:
         sig_r = "significant p<0.05" if p_val_r < 0.05 else "not significant"
         print(f"    [reaction vs plain diffusion]: mean_diff={mean_diff_r:+.4f} t={t_stat_r:.3f} "
               f"p={p_val_r:.4f} {sig_r} ({'reaction wins' if mean_diff_r > 0 else 'plain wins'})")
+
+        mlp_gnn_wins = 0
+        for method in ["gcn", "graphsage", "gat"]:
+            other = np.array(results[graph_seed][h][method])
+            t_stat_m, p_val_m = stats.ttest_rel(mlp_denoised, other)
+            mean_diff_m = mlp_denoised.mean() - other.mean()
+            direction_m = "GraphStoch+MLP wins" if mean_diff_m > 0 else f"{method} wins"
+            if mean_diff_m <= 0:
+                mlp_gnn_wins += 1
+            sig_m = "significant p<0.05" if p_val_m < 0.05 else "not significant"
+            print(f"    [MLP ablation] vs {method:10s}: mean_diff={mean_diff_m:+.4f} t={t_stat_m:.3f} "
+                  f"p={p_val_m:.4f} {sig_m} {direction_m}")
+        t_stat_gnn, p_val_gnn = stats.ttest_rel(mlp_denoised, denoised)
+        mean_diff_gnn = mlp_denoised.mean() - denoised.mean()
+        sig_gnn = "significant p<0.05" if p_val_gnn < 0.05 else "not significant"
+        print(f"    [MLP vs full-GNN as classifier on denoised features]: mean_diff={mean_diff_gnn:+.4f} "
+              f"t={t_stat_gnn:.3f} p={p_val_gnn:.4f} {sig_gnn} "
+              f"({'MLP wins' if mean_diff_gnn > 0 else 'full GNN wins'})")
+
         crossover_summary[graph_seed][h] = gnn_wins  # 0..3, how many GNNs beat GraphStoch here
 
 print("\nCROSSOVER SUMMARY (how many of the 3 GNNs beat GraphStoch+LogReg at each homophily level, per graph seed)")
@@ -298,7 +342,7 @@ for h in HOMOPHILY_LEVELS:
     print(row)
 print("(3 = GNNs win all three comparisons, 0 = GraphStoch+LogReg wins all three)")
 
-with open("synthetic_homophily_sweep_results_v2b_reaction.json", "w") as f:
+with open("synthetic_homophily_sweep_results_v2c_mlp_ablation.json", "w") as f:
     json.dump({
         "properties": {str(gs): {str(h): property_log[gs][h] for h in HOMOPHILY_LEVELS} for gs in GRAPH_SEEDS},
         "results": {str(gs): {str(h): {k: list(v) for k, v in results[gs][h].items()} for h in HOMOPHILY_LEVELS}
@@ -306,4 +350,4 @@ with open("synthetic_homophily_sweep_results_v2b_reaction.json", "w") as f:
         "crossover_summary": {str(gs): {str(h): crossover_summary[gs][h] for h in HOMOPHILY_LEVELS}
                               for gs in GRAPH_SEEDS}
     }, f, indent=2)
-print("\nSaved raw results to synthetic_homophily_sweep_results_v2b_reaction.json")
+print("\nSaved raw results to synthetic_homophily_sweep_results_v2c_mlp_ablation.json")

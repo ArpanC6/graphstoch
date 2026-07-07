@@ -824,6 +824,85 @@ N=1000, giving reasonable confidence the comparison is fair. Real-data
 replication (Cora/Citeseer/PubMed) has not yet been attempted for this
 variant.
 
+## Section 15: GraphStoch + MLP vs. GraphStoch + Full GNN - An Ablation
+
+Motivation. Section 14 tested replacing the fixed Laplacian with a
+learned diffusion operator. This section tests a different, complementary
+question, raised directly by Bastian Epping (PhD student, RWTH Aachen,
+Michael Schaub's group) in response to this project's outreach: since
+GNNs perform their own implicit Laplacian smoothing via message passing,
+does pairing GraphStoch's explicit smoothing with a full end-to-end GNN
+downstream simply duplicate that smoothing - meaning a much cheaper
+classifier (a plain MLP, with no graph-awareness at all) might do just
+as well as a full GNN once GraphStoch has already denoised the features?
+This is the same question underlying SGC (Wu et al., 2019) and Correct &
+Smooth (Huang et al., 2021): does the smoothing step and the downstream
+model need to both be graph-aware, or is one graph-aware step enough?
+
+Method. A capacity-matched 2-layer MLP (hidden_channels=16, identical to
+the GNN baselines' hidden layer size) was added to the existing synthetic
+homophily sweep (`synthetic_homophily_sweep_v2.py`), trained on
+GraphStoch-denoised features - the same X_denoised already used by the
+`logreg_denoised` arm - using the identical training loop, optimizer,
+and early-stopping criteria as the GCN/GraphSAGE/GAT baselines, so the
+only difference between the MLP arm and the full-GNN arms is architecture
+(no graph structure used at all vs. two rounds of message passing).
+Paired design preserved across 3 graph seeds x 5 homophily levels x 5
+noise seeds (75 trials total), matching the methodology of Sections 9-14.
+
+Result: GraphStoch+MLP vs. GraphStoch+full-GNN (same denoised features)
+
+Direct paired t-tests between the MLP arm and each corresponding
+full-GNN arm (GCN, GraphSAGE, GAT), both trained on the identical
+X_denoised, across all 15 seed/homophily combinations:
+
+| Homophily | Seed 42 | Seed 43 | Seed 44 |
+|---|---|---|---|
+| 0.50 | not sig (full GNN wins) | not sig (full GNN wins) | not sig (full GNN wins) |
+| 0.60 | not sig (MLP wins) | not sig (full GNN wins) | not sig (MLP wins) |
+| 0.70 | **sig, MLP wins** (+0.115) | not sig (full GNN wins) | not sig (MLP wins) |
+| 0.80 | not sig (full GNN wins, diff=0.000) | not sig (full GNN wins) | not sig (MLP wins) |
+| 0.90 | not sig (full GNN wins) | **sig, full GNN wins** (-0.007) | not sig (MLP wins) |
+
+13 of 15 cells show no significant difference between GraphStoch+MLP and
+GraphStoch+full-GNN. The two significant cells point in opposite
+directions (one favors MLP, one favors the full GNN) and are not
+concentrated at any particular homophily level or graph seed, so neither
+is read as a systematic effect - both are consistent with noise around a
+true null difference.
+
+Honest interpretation. This is a fairly clean empirical confirmation of
+the hypothesis motivating the test: once GraphStoch has performed
+explicit Laplacian smoothing, a full GNN's additional implicit smoothing
+does not reliably improve on a plain, graph-unaware MLP of matched
+capacity. The two smoothing mechanisms appear largely redundant in this
+setting, consistent with the SGC/Correct & Smooth line of work already
+cited in this document (Section 12's references) - this project's own
+denoise-then-classify pipeline is architecturally in that same family,
+and this ablation is direct evidence for why that family works: the
+graph-awareness only needs to happen once.
+
+Scope and what this does not show. This ablation does not rescue
+GraphStoch's known weak spot. The crossover pattern established in
+Section 7 and confirmed in Sections 9, 12, and 14 - GNNs win clearly
+below homophily ~0.7-0.8, GraphStoch wins above it - is identical
+whether the downstream classifier is LogReg, MLP, or a full GNN: at
+h=0.5-0.7, GraphStoch+MLP loses to every GNN baseline by margins
+comparable to GraphStoch+LogReg's losses in the same cells (Section 7's
+original table), and the "MLP vs full-GNN" comparison at these low
+homophily levels shows no significant advantage for either the MLP or
+the full GNN over the other in that shared losing position. This result
+answers a narrower question - "does the downstream classifier's own
+graph-awareness matter once GraphStoch has denoised?" (largely no) -
+and leaves the separate, larger question - "why does GraphStoch's own
+denoising underperform below h~0.7-0.8?" (Section 7's spectral
+detectability argument) - exactly where it was.
+
+Communicated to Bastian Epping (16 Jul, email correspondence) alongside
+the plan to next test the Jia & Benson (2020) election/demographic
+dataset as node regression, using this MLP as the natural downstream
+model given this section's finding.
+
 ### References (additional to Section "References" below)
 
 - Decelle, A., Krzakala, F., Moore, C., & Zdeborová, L. (2011). Asymptotic
