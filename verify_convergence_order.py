@@ -65,7 +65,7 @@ def run_convergence_check(A, name, T=1.0, sigma=0.5, n_seeds=200,
     X0 = np.zeros(n)
     X0[0] = 10.0
 
-    # --- Ground truth via exact_solve ---
+    # Ground truth via exact_solve
     # exact_solve returns (sample, mean, var_modes); we want the exact mean.
     _, exact_mean, _ = jl.GraphStoch.exact_solve(L, jl.Vector(X0), sigma, T)
     exact_mean = np.array(exact_mean)
@@ -130,7 +130,7 @@ def run_convergence_check(A, name, T=1.0, sigma=0.5, n_seeds=200,
 def main():
     results = {}
 
-    # --- Graph 1: small synthetic Erdos-Renyi ---
+    # Graph 1: small synthetic Erdos-Renyi 
     np.random.seed(42)
     G_synth = nx.erdos_renyi_graph(10, 0.4, seed=42)
     # Ensure connected (required for the lambda_1=0 simple eigenvalue
@@ -144,7 +144,7 @@ def main():
         A_synth, "Synthetic 10-node Erdos-Renyi", T=1.0, sigma=0.5,
         n_seeds=300, seed_base=1000)
 
-    # --- Graph 2: Zachary's Karate Club (real network, already used in project) ---
+    # Graph 2: Zachary's Karate Club (real network, already used in project)
     G_karate = nx.karate_club_graph()
     A_karate = laplacian_from_networkx(G_karate)
     results["karate_club"] = run_convergence_check(

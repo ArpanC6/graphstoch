@@ -231,7 +231,7 @@ results = {h: {"logreg_noisy": [], "logreg_denoised_plain": [],
 
 t_start = time.time()
 for h in HOMOPHILY_LEVELS:
-    print(f"\n=== Homophily {h:.2f} ===", flush=True)
+    print(f"\nHomophily {h:.2f}", flush=True)
     for graph_seed in GRAPH_SEEDS:
         G, labels = make_sbm_graph(N_NODES, AVG_DEGREE, h, graph_seed)
         X_clean = make_features(labels, N_NODES, FEAT_DIM, FEATURE_SEPARATION, FEATURE_SEED)

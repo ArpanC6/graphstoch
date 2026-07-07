@@ -147,14 +147,14 @@ for level_name, noise_std in NOISE_LEVELS.items():
 
     print(f"Noise level {level_name} done.")
 
-print("\n=== SUMMARY (Citeseer, normalized features) ===")
+print("\nSUMMARY (Citeseer, normalized features)")
 for level_name in NOISE_LEVELS:
     print(f"\nNoise level: {level_name}")
     for method, accs in results[level_name].items():
         arr = np.array(accs)
         print(f"  {method:16s}: {arr.mean():.4f} +/- {arr.std():.4f}")
 
-print("\n=== PAIRED T-TEST: GraphStoch(denoised)+LogReg vs each GNN baseline ===")
+print("\nPAIRED T-TEST: GraphStoch(denoised)+LogReg vs each GNN baseline")
 for level_name in NOISE_LEVELS:
     denoised = np.array(results[level_name]["logreg_denoised"])
     print(f"\nNoise level: {level_name}")

@@ -11,14 +11,13 @@ from scipy import stats
 import json
 import copy
 
-# ============================================================
 # SYNTHETIC GRAPH GENERATION (Stochastic Block Model)
 #
 # Goal: hold node count, average degree, and feature signal
 # strength FIXED, and vary ONLY edge homophily, to test whether
 # homophily alone drives the GraphStoch-vs-GNN flip seen across
 # Cora / Citeseer / PubMed.
-# ============================================================
+
 
 N_NODES = 1000
 AVG_DEGREE = 6.0
@@ -80,9 +79,9 @@ def make_masks(n_nodes, labels, seed, train_frac=0.6, val_frac=0.2):
     return train_mask, val_mask, test_mask
 
 
-# ============================================================
+
 # MODELS (identical to cora/citeseer/pubmed scripts)
-# ============================================================
+
 
 class GCN(torch.nn.Module):
     def __init__(self, in_channels, hidden_channels, out_channels):
@@ -171,7 +170,6 @@ def eval_logreg(X_features, y, train_mask, test_mask):
     return (preds == y[test_mask]).mean()
 
 
-# ============================================================
 # MAIN SWEEP
 #
 # Noise level is fixed at "medium" (0.5x feature std) across all
@@ -180,7 +178,7 @@ def eval_logreg(X_features, y, train_mask, test_mask):
 # is already comparable in cost to one full noise-level sweep on a
 # real dataset, despite the synthetic graph being much smaller than
 # PubMed.)
-# ============================================================
+
 
 NOISE_FRACTION = 0.5
 
@@ -214,8 +212,8 @@ for h in HOMOPHILY_LEVELS:
     safe_dt = gs_model.stable_dt() * 0.5
     gs_model = GraphSDE(A, noise_level=0.5, dt=safe_dt)
 
-    print(f"\n=== homophily target={h:.2f} (actual={actual_h:.4f}), avg_deg={avg_deg:.4f}, "
-          f"lambda2={lam2:.5f} ===")
+    print(f"\nhomophily target={h:.2f} (actual={actual_h:.4f}), avg_deg={avg_deg:.4f}, "
+          f"lambda2={lam2:.5f}")
     print(f"stable_dt: {gs_model.stable_dt():.6f}, using dt={safe_dt:.6f}")
 
     for seed in SEEDS:
